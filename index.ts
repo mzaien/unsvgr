@@ -1624,6 +1624,12 @@ function main() {
 		.description(
 			"Convert react-native-svg TSX to static .svg (string transforms).",
 		)
+		.usage("[options] [input] [outputDir]")
+		.helpOption("-h, --help", "Display help for command")
+		.addHelpText(
+			"after",
+			"\nExamples:\n  unsvgr icons.tsx ./out\n  unsvgr --input src/components/svgs --nano\n",
+		)
 		.argument(
 			"[input]",
 			"Input .tsx/.ts file or directory; omit to scan --input",
