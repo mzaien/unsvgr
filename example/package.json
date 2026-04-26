@@ -10,7 +10,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "convert-svg": "bun ../index.ts -i components -o components/svg"
+    "convert-svg": "bun ../index.ts -i components -o components/svg",
+    "convert-svg:nano": "bun ../index.ts -i components -o components/svg --nano",
+    "unsvgr-help": "bun ../index.ts --help"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
