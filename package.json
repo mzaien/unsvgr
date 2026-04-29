@@ -1,6 +1,6 @@
 {
   "name": "unsvgr",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Convert react-native-svg TSX to static .svg (string transforms).",
   "author": "Abdullah Mzaien <awmzaien@outloo.com>",
   "license": "MIT",

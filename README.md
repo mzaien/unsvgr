@@ -1,6 +1,17 @@
 # unsvgr
 
+[![npm version](https://img.shields.io/npm/v/unsvgr.svg)](https://www.npmjs.com/package/unsvgr)
+[![npm downloads](https://img.shields.io/npm/dm/unsvgr.svg)](https://www.npmjs.com/package/unsvgr)
+[![license](https://img.shields.io/npm/l/unsvgr.svg)](LICENSE)
+[![package size](https://img.shields.io/bundlephobia/minzip/unsvgr.svg)](https://bundlephobia.com/package/unsvgr)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178c6.svg)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1.svg)](https://bun.sh/)
+
 Convert `react-native-svg` TS/TSX icon components into static `.svg` files.
+
+## Demo
+
+<video src="https://raw.githubusercontent.com/mzaien/unsvgr/main/unsvgr-demo.mp4" controls muted playsinline></video>
 
 ## Install
 
@@ -51,6 +62,7 @@ unsvgr [input] [outputDir] [options]
 - File name format: `<ComponentName>.svg`
 - When scanning multiple files, all generated files are written to the selected output directory.
 - Logs each generated file and component name.
+- Skips non-convertible icons at the end with the component name and reason.
 
 ## Examples
 
@@ -105,7 +117,7 @@ The converter aggressively resolves static JSX fallback expressions before writi
 - `||`, `??`, ternary fallback branches
 - static template/string/number expressions
 
-If an expression cannot be resolved deterministically, it is left unchanged.
+If an expression cannot be resolved deterministically, that icon is skipped as non-convertible and reported after conversion.
 
 ## Contributing
 
