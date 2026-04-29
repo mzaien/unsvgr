@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { convertTSXToSVG } from './index';
+import { convertTSXToSVG, convertTSXToSvgFolder } from './index';
 
 const tempRoots: string[] = [];
 
@@ -70,7 +70,7 @@ describe('convertTSXToSVG aggressive literal fallback resolution', () => {
         expect(svg).toContain('marker-start="#A1B2C3"');
     });
 
-    test('keeps unresolved dynamic expression as-is', () => {
+    test('skips unresolved dynamic expression as non-convertible', () => {
         const root = makeTempDir();
         write(
             path.join(root, 'icon.tsx'),
@@ -92,8 +92,51 @@ describe('convertTSXToSVG aggressive literal fallback resolution', () => {
         );
 
         const out = convertTSXToSVG(path.join(root, 'icon.tsx'));
+        expect(out).toBeNull();
+    });
+
+    test('reports non-convertible icon names and reasons in batch output', () => {
+        const root = makeTempDir();
+        const outputDir = path.join(root, 'out');
+        write(
+            path.join(root, 'icons.tsx'),
+            [
+                "import Svg, { Path } from 'react-native-svg';",
+                'const defaultColor = "#FCFCFC";',
+                'function getColor() { return defaultColor; }',
+                'export function CheckIcon() {',
+                '    return (',
+                '        <Svg viewBox="0 0 12 12" fill="none">',
+                "            <Path d='M1 1L11 11' stroke='#FCFCFC' />",
+                '        </Svg>',
+                '    );',
+                '}',
+                'export function XIcon(props: any) {',
+                '    return (',
+                '        <Svg viewBox="0 0 12 12" fill="none">',
+                '            <Path',
+                "                d='M1 1L11 11'",
+                '                stroke={props.color || getColor()}',
+                '            />',
+                '        </Svg>',
+                '    );',
+                '}',
+            ].join('\n'),
+        );
+
+        const out = convertTSXToSvgFolder(path.join(root, 'icons.tsx'), outputDir);
         expect(out).not.toBeNull();
-        const svg = out?.svgContent ?? '';
-        expect(svg).toContain('stroke={props.color || getColor()}');
+        expect(out?.files).toEqual([
+            {
+                outputPath: path.join(outputDir, 'CheckIcon.svg'),
+                componentName: 'CheckIcon',
+            },
+        ]);
+        expect(out?.skippedNonConvertible).toEqual([
+            {
+                componentName: 'XIcon',
+                reason: 'unresolved dynamic expression: props.color || getColor()',
+            },
+        ]);
     });
 });

@@ -1506,6 +1506,40 @@ function svgContainsFilterOrMask(svg: string): boolean {
 	return false;
 }
 
+function findUnresolvedDynamicExpressions(svg: string): string[] {
+	const expressions: string[] = [];
+	let i = 0;
+
+	while (i < svg.length) {
+		const eq = svg.indexOf("=", i);
+		if (eq === -1) {
+			break;
+		}
+
+		const parsed = extractJsxExpressionBody(svg, eq);
+		if (parsed) {
+			expressions.push(parsed.body);
+			i = parsed.end + 1;
+			continue;
+		}
+
+		i = eq + 1;
+	}
+
+	return [...new Set(expressions)];
+}
+
+function nonConvertibleReason(svg: string): string | null {
+	const expressions = findUnresolvedDynamicExpressions(svg);
+	if (expressions.length === 0) {
+		return null;
+	}
+	if (expressions.length === 1) {
+		return `unresolved dynamic expression: ${expressions[0]}`;
+	}
+	return `unresolved dynamic expressions: ${expressions.join(", ")}`;
+}
+
 function convertTSXToSVG(
 	inputFilePath: string,
 ): { outputPath: string; svgContent: string } | null {
@@ -1525,6 +1559,10 @@ function convertTSXToSVG(
 			inputFilePath,
 			path.extname(inputFilePath),
 		);
+		if (nonConvertibleReason(transformedContent)) {
+			return null;
+		}
+
 		const outputFilename = `${inputFilename}.svg`;
 		const outputPath = path.join(inputDir, outputFilename);
 
@@ -1572,6 +1610,7 @@ function convertTSXToSvgFolder(
 	outputDir: string;
 	files: { outputPath: string; componentName: string }[];
 	skippedNano: { componentName: string }[];
+	skippedNonConvertible: { componentName: string; reason: string }[];
 } | null {
 	try {
 		const tsxContent = fs.readFileSync(inputFilePath, "utf8");
@@ -1589,11 +1628,17 @@ function convertTSXToSvgFolder(
 
 		const files: { outputPath: string; componentName: string }[] = [];
 		const skippedNano: { componentName: string }[] = [];
+		const skippedNonConvertible: { componentName: string; reason: string }[] = [];
 		const nano = options?.nano === true;
 		const prefix = options?.filePrefix;
 
 		for (const { name, svgFragment } of components) {
 			const transformed = transformTSXToSVG(svgFragment, resolveExpr);
+			const reason = nonConvertibleReason(transformed);
+			if (reason) {
+				skippedNonConvertible.push({ componentName: name, reason });
+				continue;
+			}
 			if (nano && svgContainsFilterOrMask(transformed)) {
 				console.error(`Skipped (nano: filter/mask): ${name}`);
 				skippedNano.push({ componentName: name });
@@ -1606,7 +1651,7 @@ function convertTSXToSvgFolder(
 			files.push({ outputPath, componentName: name });
 		}
 
-		return { outputDir, files, skippedNano };
+		return { outputDir, files, skippedNano, skippedNonConvertible };
 	} catch (error) {
 		console.error(
 			`Error converting ${inputFilePath}:`,
@@ -1706,6 +1751,11 @@ function main() {
 				let exitCode = 0;
 				let totalWrote = 0;
 				let totalSkipped = 0;
+				const nonConvertible: {
+					inputFilePath: string;
+					componentName: string;
+					reason: string;
+				}[] = [];
 
 				for (const inputFilePath of inputs) {
 					const inputDir = path.dirname(inputFilePath);
@@ -1734,11 +1784,18 @@ function main() {
 					}
 
 					const skipN = batch.skippedNano.length;
+					const nonConvertibleN = batch.skippedNonConvertible.length;
 					const wroteN = batch.files.length;
 					totalWrote += wroteN;
 					totalSkipped += skipN;
+					nonConvertible.push(
+						...batch.skippedNonConvertible.map((item) => ({
+							inputFilePath,
+							...item,
+						})),
+					);
 					console.log(
-						`Wrote ${wroteN} file(s)${nano && skipN > 0 ? `, skipped ${skipN} (nano: filter/mask)` : ""} to ${batch.outputDir}:`,
+						`Wrote ${wroteN} file(s)${nano && skipN > 0 ? `, skipped ${skipN} (nano: filter/mask)` : ""}${nonConvertibleN > 0 ? `, skipped ${nonConvertibleN} non-convertible` : ""} to ${batch.outputDir}:`,
 					);
 					for (const f of batch.files) {
 						console.log(
@@ -1747,9 +1804,19 @@ function main() {
 					}
 				}
 
+				if (nonConvertible.length > 0) {
+					console.log("\nNon-convertible icons:");
+					for (const item of nonConvertible) {
+						const source = multi
+							? ` (${path.relative(process.cwd(), item.inputFilePath)})`
+							: "";
+						console.log(`  ${item.componentName}${source}: ${item.reason}`);
+					}
+				}
+
 				if (multi) {
 					console.log(
-						`\nDone: ${totalWrote} .svg file(s) total${nano && totalSkipped > 0 ? `, ${totalSkipped} skipped (nano)` : ""}.`,
+						`\nDone: ${totalWrote} .svg file(s) total${nano && totalSkipped > 0 ? `, ${totalSkipped} skipped (nano)` : ""}${nonConvertible.length > 0 ? `, ${nonConvertible.length} non-convertible` : ""}.`,
 					);
 				}
 

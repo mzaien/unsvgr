@@ -1,8 +1,14 @@
-import { View, ViewStyle } from "react-native";
-import Svg, { Path, SvgProps } from "react-native-svg";
+import { View } from "react-native";
+import type { ViewStyle } from "react-native";
+import Svg, { Path } from "react-native-svg";
+import type { SvgProps } from "react-native-svg";
 import { Colors } from "@/constants/theme";
 
 const defaultColor = '#FCFCFC';
+
+function getColor() {
+    return defaultColor;
+}
 
 export function XIcon(props: SvgProps & {size?: number; style?: ViewStyle}) {
     return (
@@ -61,6 +67,19 @@ export function CalendarIcon(props: SvgProps) {
                 strokeWidth={props.strokeWidth ?? 1.6}
                 strokeLinecap="round"
                 strokeLinejoin="round"
+            />
+        </Svg>
+    );
+}
+
+export function DynamicColorIcon(props: SvgProps) {
+    return (
+        <Svg viewBox="0 0 12 12" fill="none">
+            <Path
+                d="M1 1L11 11"
+                stroke={props.color || getColor()}
+                strokeWidth={2}
+                strokeLinecap="round"
             />
         </Svg>
     );
