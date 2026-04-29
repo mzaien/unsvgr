@@ -122,8 +122,8 @@ If an expression cannot be resolved deterministically, that icon is skipped as n
 ## Contributing
 
 ```bash
-git clone <repo-url>
-cd rnsvg-to-svg
+git clone https://github.com/mzaien/unsvgr
+cd unsvgr
 bun install
 ```
 
