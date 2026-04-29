@@ -11,7 +11,7 @@ Convert `react-native-svg` TS/TSX icon components into static `.svg` files.
 
 ## Demo
 
-<video src="https://raw.githubusercontent.com/mzaien/unsvgr/main/unsvgr-demo.mp4" controls muted playsinline></video>
+<video src="https://github.com/user-attachments/assets/e1e5931b-bb2c-4089-b60e-ab0eb33b4637" controls muted playsinline></video>
 
 ## Install
 
