@@ -1,0 +1,8 @@
+<svg viewBox="0 0 100 100" fill="none">
+            <defs>
+                <pattern id="pat1" width="20" height="20" patternUnits="userSpaceOnUse" patternContentUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                    <circle cx="10" cy="10" r="5" fill="#FF6347" />
+                </pattern>
+            </defs>
+            <rect x="10" y="10" width="80" height="80" fill="url(#pat1)" rx="5" />
+        </svg>

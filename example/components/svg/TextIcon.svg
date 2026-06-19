@@ -1,0 +1,9 @@
+<svg viewBox="0 0 200 200" fill="none">
+            <defs>
+                <path id="textPath1" d="M10 100 Q 100 20, 190 100" fill="none" />
+            </defs>
+            <text x="20" y="40" font-size="16" fill="#333" font-family="Arial" font-weight="bold">
+                Hello<tspan dx="5" dy="5">World</tspan>
+            </text>
+            <textPath href="#textPath1" font-size="14" fill="#666" startOffset="50%" text-anchor="middle">Curved Text</textPath>
+        </svg>

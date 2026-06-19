@@ -2,7 +2,7 @@
 
 import { Command } from "commander";
 import { globSync } from "glob";
-import fs from "fs";
+import fs, { type FSWatcher } from "fs";
 import path from "path";
 import ts from "typescript";
 
@@ -1468,8 +1468,8 @@ function extractAllSvgComponents(tsxContent: string): SvgComponentExport[] {
 
 	for (let i = 0; i < regions.length; i++) {
 		const end =
-			i + 1 < regions.length ? regions[i + 1].start : tsxContent.length;
-		const slice = tsxContent.slice(regions[i].start, end);
+			i + 1 < regions.length ? regions[i + 1]?.start : tsxContent.length;
+		const slice = tsxContent.slice(regions[i]?.start, end);
 		const svgFragment = extractSVGContent(slice);
 		if (!svgFragment) {
 			continue;
@@ -1605,7 +1605,7 @@ function discoverSvgSourceFiles(rootDir: string): string[] {
 function convertTSXToSvgFolder(
 	inputFilePath: string,
 	outputDir: string,
-	options?: { nano?: boolean; filePrefix?: string },
+	options?: { nano?: boolean; filePrefix?: string; dryRun?: boolean },
 ): {
 	outputDir: string;
 	files: { outputPath: string; componentName: string }[];
@@ -1616,6 +1616,9 @@ function convertTSXToSvgFolder(
 		const tsxContent = fs.readFileSync(inputFilePath, "utf8");
 		const components = extractAllSvgComponents(tsxContent);
 		const resolveExpr = buildExpressionLiteralResolver(inputFilePath, tsxContent);
+		const nano = options?.nano === true;
+		const dryRun = options?.dryRun === true;
+		const prefix = options?.filePrefix;
 
 		if (components.length === 0) {
 			console.error(
@@ -1624,13 +1627,13 @@ function convertTSXToSvgFolder(
 			return null;
 		}
 
-		fs.mkdirSync(outputDir, { recursive: true });
+		if (!dryRun) {
+			fs.mkdirSync(outputDir, { recursive: true });
+		}
 
 		const files: { outputPath: string; componentName: string }[] = [];
 		const skippedNano: { componentName: string }[] = [];
 		const skippedNonConvertible: { componentName: string; reason: string }[] = [];
-		const nano = options?.nano === true;
-		const prefix = options?.filePrefix;
 
 		for (const { name, svgFragment } of components) {
 			const transformed = transformTSXToSVG(svgFragment, resolveExpr);
@@ -1647,7 +1650,9 @@ function convertTSXToSvgFolder(
 			const stem = prefix ? `${prefix}__${name}` : name;
 			const fileName = `${sanitizeSvgFileName(stem)}.svg`;
 			const outputPath = path.join(outputDir, fileName);
-			fs.writeFileSync(outputPath, transformed, "utf8");
+			if (!dryRun) {
+				fs.writeFileSync(outputPath, transformed, "utf8");
+			}
 			files.push({ outputPath, componentName: name });
 		}
 
@@ -1659,6 +1664,188 @@ function convertTSXToSvgFolder(
 		);
 		return null;
 	}
+}
+
+async function processFileBatch(
+	inputs: string[],
+	outputDirArg: string | undefined,
+	outputOptDir: string | undefined,
+	nano: boolean,
+	concurrency: number,
+	dryRun: boolean,
+): Promise<{
+	exitCode: number;
+	totalWrote: number;
+	totalSkipped: number;
+	nonConvertible: { inputFilePath: string; componentName: string; reason: string }[];
+}> {
+	const multi = inputs.length > 1;
+	let totalWrote = 0;
+	let totalSkipped = 0;
+	let exitCode = 0;
+	const nonConvertible: { inputFilePath: string; componentName: string; reason: string }[] = [];
+
+	for (let i = 0; i < inputs.length; i += concurrency) {
+		const chunk = inputs.slice(i, i + concurrency);
+		const results = await Promise.allSettled(
+			chunk.map(async (inputFilePath) => {
+				const inputDir = path.dirname(inputFilePath);
+				let outputDir: string;
+				if (outputDirArg !== undefined) {
+					outputDir = path.resolve(outputDirArg);
+				} else if (outputOptDir !== undefined) {
+					outputDir = outputOptDir;
+				} else {
+					outputDir = inputDir;
+				}
+
+				if (multi) {
+					const rel = path.relative(process.cwd(), inputFilePath);
+					console.log(`\n→ ${rel}`);
+				}
+
+				const batch = convertTSXToSvgFolder(inputFilePath, outputDir, { nano, dryRun });
+				return { inputFilePath, batch };
+			}),
+		);
+
+		for (const result of results) {
+			if (result.status === "rejected") {
+				console.error(`Error processing file: ${result.reason}`);
+				exitCode = 1;
+				continue;
+			}
+			const { inputFilePath, batch } = result.value;
+			if (!batch) {
+				exitCode = 1;
+				continue;
+			}
+
+			const skipN = batch.skippedNano.length;
+			const nonConvertibleN = batch.skippedNonConvertible.length;
+			const wroteN = batch.files.length;
+			totalWrote += wroteN;
+			totalSkipped += skipN;
+			nonConvertible.push(
+				...batch.skippedNonConvertible.map((item) => ({
+					inputFilePath,
+					...item,
+				})),
+			);
+			const dryPrefix = dryRun ? "(dry-run) " : "";
+			console.log(
+				`${dryPrefix}Wrote ${wroteN} file(s)${nano && skipN > 0 ? `, skipped ${skipN} (nano: filter/mask)` : ""}${nonConvertibleN > 0 ? `, skipped ${nonConvertibleN} non-convertible` : ""} to ${batch.outputDir}:`,
+			);
+			for (const f of batch.files) {
+				console.log(
+					`  ${dryPrefix}${path.basename(f.outputPath)} (${f.componentName})`,
+				);
+			}
+		}
+	}
+
+	if (nonConvertible.length > 0) {
+		console.log("\nNon-convertible icons:");
+		for (const item of nonConvertible) {
+			const source = multi
+				? ` (${path.relative(process.cwd(), item.inputFilePath)})`
+				: "";
+			console.log(`  ${item.componentName}${source}: ${item.reason}`);
+		}
+	}
+
+	if (multi) {
+		console.log(
+			`\nDone: ${totalWrote} .svg file(s) total${nano && totalSkipped > 0 ? `, ${totalSkipped} skipped (nano)` : ""}${nonConvertible.length > 0 ? `, ${nonConvertible.length} non-convertible` : ""}.`,
+		);
+	}
+
+	return { exitCode, totalWrote, totalSkipped, nonConvertible };
+}
+
+async function runConversion(
+	inputArg: string | undefined,
+	outputDirArg: string | undefined,
+	opts: { nano: boolean; dryRun: boolean; concurrency: number; input?: string; output?: string },
+): Promise<number> {
+	const outputOptDir = opts.output ? path.resolve(opts.output) : undefined;
+	const defaultRoot = path.resolve(
+		process.cwd(),
+		opts.input ?? "src/components/svgs",
+	);
+
+	let inputs: string[] = [];
+
+	if (inputArg === undefined || inputArg === "") {
+		inputs = discoverSvgSourceFiles(defaultRoot);
+		if (inputs.length === 0) {
+			console.error(`Error: No <Svg> sources found under ${defaultRoot}`);
+			return 1;
+		}
+		console.log(
+			`Scanning ${defaultRoot}: ${inputs.length} file(s) with <Svg>`,
+		);
+	} else if (
+		fs.existsSync(inputArg) &&
+		fs.statSync(inputArg).isDirectory()
+	) {
+		inputs = discoverSvgSourceFiles(inputArg);
+		if (inputs.length === 0) {
+			console.error(
+				`Error: No <Svg> sources found under ${path.resolve(inputArg)}`,
+			);
+			return 1;
+		}
+		console.log(
+			`Scanning ${path.resolve(inputArg)}: ${inputs.length} file(s)`,
+		);
+	} else {
+		const ext = path.extname(inputArg).toLowerCase();
+		if (ext !== ".tsx" && ext !== ".ts") {
+			console.error(
+				"Error: Input must be a .tsx / .ts file or a directory",
+			);
+			return 1;
+		}
+		if (!fs.existsSync(inputArg)) {
+			console.error(`Error: File not found: ${inputArg}`);
+			return 1;
+		}
+		inputs = [path.resolve(inputArg)];
+	}
+
+	const result = await processFileBatch(inputs, outputDirArg, outputOptDir, opts.nano, opts.concurrency, opts.dryRun);
+	return result.exitCode;
+}
+
+function startWatcher(
+	inputDir: string,
+	opts: { nano: boolean; dryRun: boolean; input?: string; output?: string },
+): FSWatcher {
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const onChange = async () => {
+		if (debounceTimer) clearTimeout(debounceTimer);
+		debounceTimer = setTimeout(async () => {
+			console.log("\nChange detected, re-running conversion...");
+			const exitCode = await runConversion(inputDir, opts.output, {
+				...opts,
+				concurrency: 1,
+			});
+			if (exitCode !== 0) {
+				console.error("Conversion completed with errors.");
+			}
+		}, 200);
+	};
+
+	const watcher = fs.watch(inputDir, { recursive: true }, (eventType, filename) => {
+		if (!filename) return;
+		const ext = path.extname(filename).toLowerCase();
+		if (ext !== ".ts" && ext !== ".tsx") return;
+		onChange();
+	});
+
+	return watcher;
 }
 
 function main() {
@@ -1693,136 +1880,48 @@ function main() {
 			"--nano",
 			"Skip filter/mask elements or mask=/filter= url attrs (font/nano)",
 		)
+		.option(
+			"--concurrency <number>",
+			"Max parallel file conversions (default: 4)",
+			"4",
+		)
+		.option("--dry-run", "Preview output without writing files")
+		.option("--watch", "Re-run conversion on file changes (concurrency forced to 1)")
 		.action(
-			(inputArg: string | undefined, outputDirArg: string | undefined) => {
-				const opts = program.opts<{
-					nano?: boolean;
-					input?: string;
-					output?: string;
-				}>();
-				const nano = opts.nano === true;
-				const outputOptDir = opts.output ? path.resolve(opts.output) : undefined;
-				const defaultRoot = path.resolve(
-					process.cwd(),
-					opts.input ?? "src/components/svgs",
-				);
+			async (inputArg: string | undefined, outputDirArg: string | undefined) => {
+			const opts = program.opts<{
+				nano?: boolean;
+				input?: string;
+				output?: string;
+				concurrency?: string;
+				dryRun?: boolean;
+				watch?: boolean;
+			}>();
+			const nano = opts.nano === true;
+			const dryRun = opts.dryRun === true;
+			const watch = opts.watch === true;
+			const concurrency = watch ? 1 : Math.min(16, Math.max(1, parseInt(opts.concurrency ?? "4", 10) || 4));
 
-				let inputs: string[] = [];
+			const exitCode = await runConversion(inputArg, outputDirArg, {
+				nano,
+				dryRun,
+				concurrency,
+				input: opts.input,
+				output: opts.output,
+			});
 
-				if (inputArg === undefined || inputArg === "") {
-					inputs = discoverSvgSourceFiles(defaultRoot);
-					if (inputs.length === 0) {
-						console.error(`Error: No <Svg> sources found under ${defaultRoot}`);
-						process.exit(1);
-					}
-					console.log(
-						`Scanning ${defaultRoot}: ${inputs.length} file(s) with <Svg>`,
-					);
-				} else if (
-					fs.existsSync(inputArg) &&
-					fs.statSync(inputArg).isDirectory()
-				) {
-					inputs = discoverSvgSourceFiles(inputArg);
-					if (inputs.length === 0) {
-						console.error(
-							`Error: No <Svg> sources found under ${path.resolve(inputArg)}`,
-						);
-						process.exit(1);
-					}
-					console.log(
-						`Scanning ${path.resolve(inputArg)}: ${inputs.length} file(s)`,
-					);
-				} else {
-					const ext = path.extname(inputArg).toLowerCase();
-					if (ext !== ".tsx" && ext !== ".ts") {
-						console.error(
-							"Error: Input must be a .tsx / .ts file or a directory",
-						);
-						process.exit(1);
-					}
-					if (!fs.existsSync(inputArg)) {
-						console.error(`Error: File not found: ${inputArg}`);
-						process.exit(1);
-					}
-					inputs = [path.resolve(inputArg)];
-				}
+			if (exitCode !== 0) {
+				process.exit(exitCode);
+			}
 
-				const multi = inputs.length > 1;
-				let exitCode = 0;
-				let totalWrote = 0;
-				let totalSkipped = 0;
-				const nonConvertible: {
-					inputFilePath: string;
-					componentName: string;
-					reason: string;
-				}[] = [];
+			if (watch) {
+				const watchDir = inputArg && fs.existsSync(inputArg) && fs.statSync(inputArg).isDirectory()
+					? path.resolve(inputArg)
+					: path.resolve(process.cwd(), opts.input ?? "src/components/svgs");
 
-				for (const inputFilePath of inputs) {
-					const inputDir = path.dirname(inputFilePath);
-
-					let outputDir: string;
-					if (outputDirArg !== undefined) {
-						outputDir = path.resolve(outputDirArg);
-					} else if (outputOptDir !== undefined) {
-						outputDir = outputOptDir;
-					} else {
-						outputDir = inputDir;
-					}
-
-					if (multi) {
-						const rel = path.relative(process.cwd(), inputFilePath);
-						console.log(`\n→ ${rel}`);
-					}
-
-					const batch = convertTSXToSvgFolder(inputFilePath, outputDir, {
-						nano,
-					});
-
-					if (!batch) {
-						exitCode = 1;
-						continue;
-					}
-
-					const skipN = batch.skippedNano.length;
-					const nonConvertibleN = batch.skippedNonConvertible.length;
-					const wroteN = batch.files.length;
-					totalWrote += wroteN;
-					totalSkipped += skipN;
-					nonConvertible.push(
-						...batch.skippedNonConvertible.map((item) => ({
-							inputFilePath,
-							...item,
-						})),
-					);
-					console.log(
-						`Wrote ${wroteN} file(s)${nano && skipN > 0 ? `, skipped ${skipN} (nano: filter/mask)` : ""}${nonConvertibleN > 0 ? `, skipped ${nonConvertibleN} non-convertible` : ""} to ${batch.outputDir}:`,
-					);
-					for (const f of batch.files) {
-						console.log(
-							`  ${path.basename(f.outputPath)} (${f.componentName})`,
-						);
-					}
-				}
-
-				if (nonConvertible.length > 0) {
-					console.log("\nNon-convertible icons:");
-					for (const item of nonConvertible) {
-						const source = multi
-							? ` (${path.relative(process.cwd(), item.inputFilePath)})`
-							: "";
-						console.log(`  ${item.componentName}${source}: ${item.reason}`);
-					}
-				}
-
-				if (multi) {
-					console.log(
-						`\nDone: ${totalWrote} .svg file(s) total${nano && totalSkipped > 0 ? `, ${totalSkipped} skipped (nano)` : ""}${nonConvertible.length > 0 ? `, ${nonConvertible.length} non-convertible` : ""}.`,
-					);
-				}
-
-				if (exitCode !== 0) {
-					process.exit(exitCode);
-				}
+				console.log(`\nWatching for changes in ${watchDir}... (Ctrl+C to exit)`);
+				startWatcher(watchDir, { nano, dryRun, input: opts.input, output: opts.output });
+			}
 			},
 		);
 
@@ -1845,4 +1944,5 @@ export {
 	transformTSXToSVG,
 	camelToKebabAttr,
 	pascalComponentToSvgTag,
+	runConversion,
 };
