@@ -56,6 +56,17 @@ unsvgr [input] [outputDir] [options]
   - `<filter>` or `<mask>` tags
   - `filter="..."` or `mask="..."` attributes
 
+- `--concurrency <number>`  
+  Max parallel file conversions when scanning multiple files.  
+  Default: `4`, maximum: `16`. Forced to `1` when `--watch` is active.
+
+- `--dry-run`  
+  Preview output — lists files that would be written without touching disk.
+
+- `--watch`  
+  Watch the input directory for changes and re-run conversion automatically on `.ts`/`.tsx` edits.  
+  Concurrency is forced to `1`. Exit with `Ctrl+C`.
+
 ## Output behavior
 
 - Converts all exported components that contain `<Svg>...</Svg>`.
@@ -106,6 +117,24 @@ unsvgr --input example/components
 
 ```bash
 unsvgr example/components/icon.tsx example/components/svg --nano
+```
+
+### 8) Dry-run to preview what would be generated
+
+```bash
+unsvgr example/components --dry-run
+```
+
+### 9) Watch mode — auto-convert on file changes
+
+```bash
+unsvgr example/components --watch
+```
+
+### 10) Increase concurrency for large batches
+
+```bash
+unsvgr example/components --output example/components/svg --concurrency 8
 ```
 
 ## Expression fallback resolution
