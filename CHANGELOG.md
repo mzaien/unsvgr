@@ -6,8 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Remotion demo project** (`remotion-demo/`) — a standalone video demo built with Remotion showcasing unsvgr's conversion workflow
-- `unsvgr-demo.mp4` — recorded demo video asset
+- **CLI flags**: `--dry-run` (preview without writing), `--watch` (auto-convert on file change), `--concurrency <n>` (parallel batch processing, default 4, max 16)
+- **Dry-run support** in `convertTSXToSvgFolder()` — pass `{ dryRun: true }` to inspect output without filesystem writes
+- **Watch mode** — uses `fs.watch` on the input directory, debounced at 200ms, re-runs conversion on `.ts`/`.tsx` changes (concurrency forced to 1)
+- **Full SVG tag coverage** — all standard `react-native-svg` elements now convert correctly: `G`, `Defs`, `LinearGradient`, `RadialGradient`, `Stop`, `ClipPath`, `Pattern`, `Marker`, `Symbol`, `Use`, `Text`, `TSpan`, `TextPath`, `ForeignObject`, `Image`, `Polygon`, `Polyline`, `Line`, `Ellipse`
+- **Static expression resolution** — template literals (`` `#${'FF0000'}` ``), ternary branches (`true ? '#F00' : '#0F0'`), and numeric brace expressions (`strokeWidth={2}`) resolve to their static values
+- **Comprehensive test suite** — 40+ new tests covering: `discoverSvgSourceFiles`, `extractAllSvgComponents`, `svgContainsFilterOrMask`, `extractSVGContent`, `transformTSXToSVG`, `camelToKebabAttr`, `pascalComponentToSvgTag`, batch `convertTSXToSvgFolder` (dry-run, auto-create dir), full CLI integration via `runConversion` (valid file, nano flag, non-existent file, dry-run, directory scan)
+- **Example icon fixtures** — `icons-shapes.tsx`, `icons-edge-cases.tsx`, `icons-advanced.tsx` covering every SVG element category
+
+### Changed
+
+- **CLI internals refactored** — monolithic action handler split into `runConversion()`, `processFileBatch()`, `startWatcher()` for testability and reuse
 
 ### Fixed
 
