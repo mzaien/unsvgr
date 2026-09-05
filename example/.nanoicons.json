@@ -1,0 +1,9 @@
+{
+  "iconSets": [
+    {
+      "inputDir": "./components/svg",
+      "outputDir": "./components/preview-nanoicons",
+      "fontFamily": "svg"
+    }
+  ]
+}

@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-09-06
+
+### Added
+
+- **Font preview CLI** — `font-preview` generates a standalone HTML preview from TTF, OTF, WOFF, or WOFF2 files.
+- **Icon names and copy support** — previews show glyph names and copy them on click.
+- **Light and dark preview themes** — follows the browser or operating system color scheme.
+- **Nano Icons example workflow** — documents previewing the generated `react-native-nano-icons` font.
+
+### Changed
+
+- **Nano-compatible conversion** — `--nano` skips SVG elements unsupported by Nano Icons.
+- **Preview output** — embeds font data directly in HTML and opens the generated file automatically on macOS.
+- **Runtime dependencies** — TypeScript and `opentype.js` are installed as CLI dependencies.
+
 ## [0.1.0] - 2026-06-19
 
 ### Added
