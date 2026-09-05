@@ -12,7 +12,8 @@
     "lint": "expo lint",
     "convert-svg": "bun ../index.ts -i components -o components/svg",
     "convert-svg:nano": "bun ../index.ts -i components -o components/svg --nano",
-    "unsvgr-help": "bun ../index.ts --help"
+    "unsvgr-help": "bun ../index.ts --help",
+    "build-icons-preview": "bun ../index.ts font-preview components/nanoicons/svg.ttf"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
