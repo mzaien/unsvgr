@@ -1,808 +1,303 @@
 import {
-    AbsoluteFill,
-    Easing,
-    interpolate,
-    spring,
-    useCurrentFrame,
-    useVideoConfig,
-} from 'remotion';
+  AbsoluteFill,
+  Easing,
+  interpolate,
+  spring,
+  useCurrentFrame,
+  useVideoConfig,
+} from "remotion";
 
-const bg = '#0d1117';
-const panel = '#161b22';
-const panelSoft = '#1f2630';
-const border = '#30363d';
-const borderSoft = '#262c36';
-const text = '#e6edf3';
-const textMuted = '#8b949e';
-const blue = '#58a6ff';
-const yellow = '#d29922';
-
-const topFilesBefore = [
-    'components/',
-    '  icon.tsx',
-];
-const topFilesAfter = [
-    'components/',
-    '  icon.tsx',
-    '  svg/',
-    '    CalendarIcon.svg',
-    '    NotesIcon.svg',
-    '    XIcon.svg',
+const icons = [
+  ["CalendarIcon", "calendar"],
+  ["CircleRectEllipseIcon", "shapes"],
+  ["ClipPathIcon", "clip"],
+  ["ExportDefaultIcon", "check"],
+  ["GradientIcon", "gradient"],
+  ["GroupIcon", "group"],
+  ["MarkerIcon", "marker"],
+  ["NotesIcon", "notes"],
+  ["PatternIcon", "pattern"],
+  ["PolygonPolylineIcon", "polygon"],
+  ["StaticOnlyIcon", "circle"],
+  ["XIcon", "x"],
 ];
 
-const editorBefore = [
-    'import Svg, { Path, SvgProps } from "react-native-svg";',
-    '',
-    'export function XIcon(props: SvgProps) {',
-    '    return (',
-    '        <Svg viewBox="0 0 12 12" {...props}>',
-    '            <Path d="M11 1L1 11M1 1L11 11" />',
-    '        </Svg>',
-    '    );',
-    '}',
-];
+const fontFamily = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
-const editorAfter = [
-    '<svg width="12"',
-    '    height="12"',
-    '    viewBox="0 0 12 12"',
-    '    fill="none"',
-    '>',
-    '    <path d="M11 1L1 11M1 1L11 11"',
-    '        stroke="#9BA1A6"',
-    '        stroke-width="2"',
-    '        stroke-linecap="round"',
-    '        stroke-linejoin="round"',
-    '    />',
-    '</svg>',
-];
+const reveal = (
+  frame: number,
+  range: [number, number],
+  easing = Easing.bezier(0.23, 1, 0.32, 1),
+) =>
+  interpolate(frame, range, [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing,
+  });
 
-const terminalLines = [
-    '$ bun ../index.ts -i components -o components/svg',
-    'Scanning /example/components: 1 file(s)',
-    'Wrote 3 file(s) to /example/components/svg:',
-    '  CalendarIcon.svg (CalendarIcon)',
-    '  NotesIcon.svg (NotesIcon)',
-    '  XIcon.svg (XIcon)',
-    'Done: 3 .svg file(s) total.',
-];
-
-const typing = (
-    frame: number,
-    fullText: string,
-    start: number,
-    charsPerFrame: number,
-) => {
-    const visible = Math.max(0, Math.floor((frame - start) * charsPerFrame));
-    return fullText.slice(0, visible);
-};
-
-type Token = {
-    text: string;
-    color: string;
-};
-
-const codePalette = {
-    plain: '#c9d1d9',
-    keyword: '#ff7b72',
-    type: '#79c0ff',
-    string: '#a5d6ff',
-    tag: '#7ee787',
-    attr: '#d2a8ff',
-    punct: '#8b949e',
-};
-
-const tsxKeywords = new Set(['import', 'from', 'export', 'function', 'return']);
-const tsxTypes = new Set(['Svg', 'Path', 'SvgProps', 'XIcon']);
-
-const tokenizeTsxLine = (line: string): Token[] => {
-    const re =
-        /(".*?")|(\bimport\b|\bfrom\b|\bexport\b|\bfunction\b|\breturn\b)|(\bSvgProps\b|\bSvg\b|\bPath\b|\bXIcon\b)|([{}()[\],.;]|<\/?|\/?>)/g;
-    const out: Token[] = [];
-    let last = 0;
-    let m: RegExpExecArray | null;
-
-    while ((m = re.exec(line))) {
-        if (m.index > last) {
-            out.push({
-                text: line.slice(last, m.index),
-                color: codePalette.plain,
-            });
-        }
-        const token = m[0];
-        let color = codePalette.plain;
-        if (m[1]) {
-            color = codePalette.string;
-        } else if (m[2] && tsxKeywords.has(token)) {
-            color = codePalette.keyword;
-        } else if (m[3] && tsxTypes.has(token)) {
-            color = codePalette.type;
-        } else if (m[4]) {
-            color = codePalette.punct;
-        }
-        out.push({ text: token, color });
-        last = re.lastIndex;
-    }
-    if (last < line.length) {
-        out.push({ text: line.slice(last), color: codePalette.plain });
-    }
-    return out;
-};
-
-const tokenizeSvgLine = (line: string): Token[] => {
-    const re = /(\/?>|<\/?|=)|("[^"]*")|(\bsvg\b|\bpath\b)|(\b[a-z-]+(?==))/g;
-    const out: Token[] = [];
-    let last = 0;
-    let m: RegExpExecArray | null;
-
-    while ((m = re.exec(line))) {
-        if (m.index > last) {
-            out.push({
-                text: line.slice(last, m.index),
-                color: codePalette.plain,
-            });
-        }
-        let color = codePalette.plain;
-        if (m[1]) {
-            color = codePalette.punct;
-        } else if (m[2]) {
-            color = codePalette.string;
-        } else if (m[3]) {
-            color = codePalette.tag;
-        } else if (m[4]) {
-            color = codePalette.attr;
-        }
-        out.push({ text: m[0], color });
-        last = re.lastIndex;
-    }
-    if (last < line.length) {
-        out.push({ text: line.slice(last), color: codePalette.plain });
-    }
-    return out;
-};
-
-const CodeBlock = ({
-    lines,
-    language,
-}: {
-    lines: string[];
-    language: 'tsx' | 'svg';
-}) => {
-    const tokenizer = language === 'tsx' ? tokenizeTsxLine : tokenizeSvgLine;
-    return (
+const Terminal = ({ frame }: { frame: number }) => {
+  const typed = "$ bun build-icons-preview".slice(
+    0,
+    Math.floor(reveal(frame, [18, 66]) * "$ bun build-icons-preview".length),
+  );
+  const output = [
+    "Font preview written to components/nanoicons/preview.html",
+    "12 glyphs ready",
+  ];
+  return (
+    <div
+      style={{
+        background: "#10141c",
+        border: "1px solid #303949",
+        borderRadius: 14,
+        boxShadow: "0 24px 70px rgba(0,0,0,.35)",
+        color: "#d7e0ed",
+        fontFamily,
+        fontSize: 22,
+        lineHeight: 1.55,
+        padding: "24px 28px",
+        width: 760,
+      }}
+    >
+      <div style={{ color: "#8b98aa", fontSize: 16, marginBottom: 12 }}>
+        unsvgr / example
+      </div>
+      <div>
+        <span style={{ color: "#8b5cf6" }}>$</span> {typed}
+        <span style={{ opacity: frame % 18 < 9 ? 1 : 0 }}>▌</span>
+      </div>
+      {output.map((line, index) => (
         <div
-            style={{
-                fontFamily:
-                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                fontSize: 17,
-                lineHeight: 1.35,
-                whiteSpace: 'pre',
-            }}
+          key={line}
+          style={{
+            color: index === 0 ? "#72d6a0" : "#91a1b5",
+            opacity: reveal(frame, [72 + index * 8, 84 + index * 8]),
+            transform: `translateY(${(1 - reveal(frame, [72 + index * 8, 84 + index * 8])) * 8}px)`,
+          }}
         >
-            {lines.map((line, lineIndex) => (
-                <div key={`${language}-${lineIndex}-${line}`}>
-                    {tokenizer(line).map((token, tokenIndex) => (
-                        <span
-                            key={`${language}-${lineIndex}-${tokenIndex}`}
-                            style={{ color: token.color }}
-                        >
-                            {token.text}
-                        </span>
-                    ))}
+          {line}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const IconVisual = ({ variant, color }: { variant: string; color: string }) => {
+  const common = {
+    fill: "none",
+    stroke: color,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    strokeWidth: 5,
+  };
+
+  return (
+    <svg height="42" viewBox="0 0 64 64" width="42">
+      {variant === "calendar" ? (
+        <path d="M16 8v10m32-10v10M10 24h44M15 14h34a5 5 0 0 1 5 5v31a5 5 0 0 1-5 5H15a5 5 0 0 1-5-5V19a5 5 0 0 1 5-5Z" {...common} />
+      ) : variant === "notes" ? (
+        <path d="M12 45V19a7 7 0 0 1 7-7h17m-8 34h-9a7 7 0 0 1-7-7m17-3 13-13a6 6 0 0 1 8 8L37 44l-14 4 4-14Z" {...common} />
+      ) : variant === "x" ? (
+        <path d="m14 14 36 36M50 14 14 50" {...common} strokeWidth={8} />
+      ) : variant === "check" ? (
+        <path d="m12 34 13 13 27-29" {...common} />
+      ) : variant === "shapes" ? (
+        <>
+          <circle cx="22" cy="23" fill={color} r="10" />
+          <rect fill={color} height="20" opacity=".72" rx="4" width="20" x="32" y="32" />
+          <ellipse cx="46" cy="17" fill={color} opacity=".45" rx="10" ry="6" />
+        </>
+      ) : variant === "polygon" ? (
+        <path d="m12 16 14-5 5 15-14 5-5-15Zm26 28h14M38 44l8-13 8 13M12 52l40 8" {...common} />
+      ) : variant === "group" ? (
+        <>
+          <circle cx="25" cy="25" fill={color} opacity=".8" r="13" />
+          <path d="m19 19 12 12" {...common} />
+          <rect fill={color} height="16" opacity=".5" rx="2" width="23" x="32" y="39" />
+        </>
+      ) : variant === "clip" ? (
+        <path d="M12 12h40v40H12zM22 42l8-20 8 20M25 35h10" {...common} />
+      ) : variant === "gradient" ? (
+        <path d="M13 48 27 16l11 24 7-14 6 22" {...common} />
+      ) : variant === "marker" ? (
+        <path d="M32 53 18 38a14 14 0 1 1 20-20l8 8a14 14 0 0 1 0 20L32 53Z" {...common} />
+      ) : variant === "pattern" ? (
+        <path d="M12 12h16v16H12zM36 12h16v16H36zM12 36h16v16H12zM36 36h16v16H36z" {...common} />
+      ) : (
+        <circle cx="32" cy="32" fill={color} r="17" />
+      )}
+    </svg>
+  );
+};
+
+const PreviewWindow = ({ frame }: { frame: number }) => {
+  const entrance = reveal(frame, [132, 162]);
+  const dark = frame < 240;
+  const copied = frame >= 260 && frame < 320;
+  const background = dark ? "#17181d" : "#f8fafc";
+  const foreground = dark ? "#f4f6fb" : "#151923";
+  const muted = dark ? "#a9b0bf" : "#687386";
+  const card = dark ? "#22252d" : "#ffffff";
+  const border = dark ? "#3b404d" : "#dbe1ea";
+
+  return (
+    <div
+      style={{
+        background,
+        borderRadius: 18,
+        boxShadow: "0 30px 90px rgba(0,0,0,.42)",
+        color: foreground,
+        opacity: entrance,
+        overflow: "hidden",
+        transform: `translateY(${(1 - entrance) * 36}px) scale(${0.96 + entrance * 0.04})`,
+        width: 930,
+      }}
+    >
+      <div
+        style={{
+          alignItems: "center",
+          borderBottom: `1px solid ${border}`,
+          display: "flex",
+          justifyContent: "space-between",
+          padding: "18px 24px",
+        }}
+      >
+        <div style={{ fontSize: 27, fontWeight: 750 }}>Font preview</div>
+        <div style={{ color: muted, fontFamily, fontSize: 15 }}>
+          {dark ? "dark mode" : "light mode"} · {copied ? "copied!" : "click an icon"}
+        </div>
+      </div>
+      <div style={{ padding: "24px 26px 30px" }}>
+        <div style={{ color: muted, fontFamily, fontSize: 16, marginBottom: 16 }}>
+          svg.ttf · 12 glyphs
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            gridTemplateColumns: "repeat(6, 1fr)",
+          }}
+        >
+          {icons.map(([name, variant], index) => {
+            const cardEntrance = reveal(frame, [136 + index * 3, 148 + index * 3]);
+            const selected = copied && index === 7;
+            return (
+              <div
+                key={name}
+                style={{
+                  alignItems: "center",
+                  background: selected ? (dark ? "#33285a" : "#eee8ff") : card,
+                  border: `1px solid ${selected ? "#8b5cf6" : border}`,
+                  borderRadius: 10,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  justifyContent: "center",
+                  minHeight: 106,
+                  opacity: cardEntrance,
+                  transform: `translateY(${(1 - cardEntrance) * 12}px)`,
+                }}
+              >
+                <div
+                  style={{
+                    color: selected ? "#a78bfa" : foreground,
+                    lineHeight: 1,
+                  }}
+                >
+                  <IconVisual color={selected ? "#a78bfa" : foreground} variant={variant} />
                 </div>
-            ))}
+                <div
+                  style={{
+                    background: selected ? (dark ? "#8b5cf6" : "#e5d9ff") : "transparent",
+                    borderRadius: 5,
+                    color: selected ? (dark ? "#ffffff" : "#6d28d9") : muted,
+                    fontFamily,
+                    fontSize: 12,
+                    padding: selected ? "4px 6px" : "4px 0",
+                  }}
+                >
+                  {selected ? "Copied!" : name}
+                </div>
+              </div>
+            );
+          })}
         </div>
-    );
-};
-
-const ActivityIcon = ({
-    variant,
-    active,
-}: {
-    variant: 'explorer' | 'search' | 'debug' | 'marketplace';
-    active: boolean;
-}) => {
-    const stroke = active ? '#dbe6f3' : '#71839a';
-    return (
-        <div
-            style={{
-                width: 14,
-                height: 14,
-                position: 'relative',
-                opacity: active ? 1 : 0.95,
-            }}
-        >
-            {variant === 'explorer' ? (
-                <>
-                    <div
-                        style={{
-                            position: 'absolute',
-                            inset: 1,
-                            border: `2px solid ${stroke}`,
-                            borderRadius: 2,
-                        }}
-                    />
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: 2,
-                            bottom: 2,
-                            left: 6,
-                            width: 2,
-                            background: stroke,
-                        }}
-                    />
-                </>
-            ) : null}
-            {variant === 'search' ? (
-                <>
-                    <div
-                        style={{
-                            position: 'absolute',
-                            width: 8,
-                            height: 8,
-                            left: 1,
-                            top: 1,
-                            border: `2px solid ${stroke}`,
-                            borderRadius: 999,
-                        }}
-                    />
-                    <div
-                        style={{
-                            position: 'absolute',
-                            width: 6,
-                            height: 2,
-                            right: 0,
-                            bottom: 1,
-                            background: stroke,
-                            transform: 'rotate(42deg)',
-                            borderRadius: 2,
-                        }}
-                    />
-                </>
-            ) : null}
-            {variant === 'debug' ? (
-                <>
-                    <div
-                        style={{
-                            position: 'absolute',
-                            inset: 1,
-                            border: `2px solid ${stroke}`,
-                            borderRadius: 3,
-                        }}
-                    />
-                    <div
-                        style={{
-                            position: 'absolute',
-                            left: 5,
-                            top: 0,
-                            width: 4,
-                            height: 2,
-                            background: stroke,
-                            borderRadius: 2,
-                        }}
-                    />
-                    <div
-                        style={{
-                            position: 'absolute',
-                            left: 5,
-                            bottom: 0,
-                            width: 4,
-                            height: 2,
-                            background: stroke,
-                            borderRadius: 2,
-                        }}
-                    />
-                </>
-            ) : null}
-            {variant === 'marketplace' ? (
-                <>
-                    <div
-                        style={{
-                            width: 10,
-                            height: 10,
-                            left: 2,
-                            top: 2,
-                            border: `2px solid ${stroke}`,
-                            borderRadius: 2,
-                            position: 'absolute',
-                        }}
-                    />
-                    <div
-                        style={{
-                            position: 'absolute',
-                            left: 6,
-                            top: 2,
-                            width: 2,
-                            height: 10,
-                            background: stroke,
-                        }}
-                    />
-                    <div
-                        style={{
-                            position: 'absolute',
-                            left: 2,
-                            top: 6,
-                            width: 10,
-                            height: 2,
-                            background: stroke,
-                        }}
-                    />
-                </>
-            ) : null}
-        </div>
-    );
+      </div>
+    </div>
+  );
 };
 
 export const MyComposition = () => {
-    const frame = useCurrentFrame();
-    const { fps } = useVideoConfig();
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const intro = spring({
+    fps,
+    frame,
+    config: { damping: 200, stiffness: 170, mass: 0.8 },
+  });
+  const phase = frame < 112 ? "terminal" : frame < 132 ? "transition" : "preview";
+  const titleOpacity = reveal(frame, [0, 22]);
 
-    const intro = spring({
-        fps,
-        frame,
-        config: {
-            damping: 150,
-            stiffness: 210,
-            mass: 0.74,
-        },
-    });
-    const introTranslateY = interpolate(frame, [0, 26], [58, 0], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-        easing: Easing.bezier(0.18, 1, 0.25, 1),
-    });
-    const introBlur = interpolate(frame, [0, 24], [15, 0], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-        easing: Easing.bezier(0.18, 1, 0.25, 1),
-    });
-    const introGlow = interpolate(frame, [0, 20, 42], [0.46, 0.2, 0], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-    });
-    const introVignette = interpolate(frame, [0, 26], [0.55, 0.25], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-    });
-    const introSweep = interpolate(frame, [0, 30], [1, 0], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-    });
-
-    const treeRevealFrame = 110;
-    const conversionStart = 136;
-    const conversionProgress = interpolate(
-        frame,
-        [conversionStart, conversionStart + 92],
-        [0, 1],
-        {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.bezier(0.22, 1, 0.36, 1),
-        },
-    );
-
-    const beforeOpacity = interpolate(conversionProgress, [0, 0.45], [1, 0], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-    });
-    const afterOpacity = interpolate(conversionProgress, [0.45, 1], [0, 1], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-    });
-
-    const terminalReveal = interpolate(frame, [35, 105], [0, 1], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-    });
-    const terminalLinesCount = Math.floor(terminalReveal * terminalLines.length);
-
-    const commandText = typing(
-        frame,
-        '$ bunx unsvgr -i components -o components/svg',
-        16,
-        1.7,
-    );
-
-    const showConvertedFiles = frame >= treeRevealFrame;
-    const showXIconTab = frame >= treeRevealFrame + 40;
-    const xIconHighlight = interpolate(
-        frame,
-        [treeRevealFrame + 4, treeRevealFrame + 34],
-        [0, 1],
-        {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.bezier(0.2, 0.9, 0.2, 1),
-        },
-    );
-    const clickTravel = interpolate(
-        frame,
-        [treeRevealFrame + 4, treeRevealFrame + 40],
-        [0, 1],
-        {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-            easing: Easing.bezier(0.22, 1, 0.36, 1),
-        },
-    );
-    const mouseOpacity = interpolate(
-        frame,
-        [treeRevealFrame - 2, treeRevealFrame + 4, treeRevealFrame + 40],
-        [0, 1, 0],
-        {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-        },
-    );
-    const clickPulse = interpolate(
-        frame,
-        [treeRevealFrame + 40, treeRevealFrame + 46],
-        [0, 1],
-        {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-        },
-    );
-    const beforeYOffset = interpolate(conversionProgress, [0, 1], [0, -14], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-        easing: Easing.bezier(0.2, 0.9, 0.2, 1),
-    });
-    const afterYOffset = interpolate(conversionProgress, [0, 1], [14, 0], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-        easing: Easing.bezier(0.2, 0.9, 0.2, 1),
-    });
-    const beforeBlur = interpolate(conversionProgress, [0, 1], [0, 8], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-    });
-    const afterBlur = interpolate(conversionProgress, [0, 1], [8, 0], {
-        extrapolateLeft: 'clamp',
-        extrapolateRight: 'clamp',
-    });
-
-    return (
-        <AbsoluteFill
-            style={{
-                backgroundColor: bg,
-                transform: `translateY(${introTranslateY}px) scale(${0.925 + intro * 0.075})`,
-                opacity: 0.62 + intro * 0.38,
-                filter: `blur(${introBlur}px)`,
-                padding: 38,
-                fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif',
-            }}
+  return (
+    <AbsoluteFill
+      style={{
+        alignItems: "center",
+        background: "#0b0e14",
+        color: "#f3f6fb",
+        display: "flex",
+        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
+        justifyContent: "center",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          left: 82,
+          opacity: titleOpacity,
+          position: "absolute",
+          top: 56,
+          transform: `translateY(${(1 - titleOpacity) * 18}px)`,
+        }}
+      >
+        <div style={{ color: "#8b5cf6", fontFamily, fontSize: 24, letterSpacing: 2 }}>
+          UNSVGR · v0.2
+        </div>
+        <div style={{ fontSize: 42, fontWeight: 800, marginTop: 8 }}>
+          From SVG components to a clickable font preview.
+        </div>
+      </div>
+      <div
+        style={{
+          opacity: phase === "terminal" ? 1 : phase === "transition" ? 1 - reveal(frame, [112, 132]) : 0,
+          position: "absolute",
+          transform: `translateY(${intro * 0}px)`,
+        }}
+      >
+        <Terminal frame={frame} />
+      </div>
+      <div
+        style={{
+          opacity: phase === "preview" ? 1 : 0,
+          position: "absolute",
+        }}
+      >
+        <PreviewWindow frame={frame} />
+      </div>
+      {frame >= 240 ? (
+        <div
+          style={{
+            color: "#8b5cf6",
+            fontFamily,
+            fontSize: 18,
+            opacity: reveal(frame, [240, 255]),
+            position: "absolute",
+            right: 86,
+            top: 64,
+          }}
         >
-            <div
-                style={{
-                    position: 'absolute',
-                    inset: 0,
-                    pointerEvents: 'none',
-                    background:
-                        'radial-gradient(circle at 58% 18%, rgba(88,166,255,0.35), rgba(88,166,255,0) 42%)',
-                    opacity: introGlow,
-                }}
-            />
-            <div
-                style={{
-                    position: 'absolute',
-                    inset: 0,
-                    pointerEvents: 'none',
-                    background:
-                        'linear-gradient(110deg, rgba(255,255,255,0.18), rgba(255,255,255,0) 45%)',
-                    opacity: introSweep,
-                }}
-            />
-            <div
-                style={{
-                    position: 'absolute',
-                    inset: 0,
-                    pointerEvents: 'none',
-                    background:
-                        'radial-gradient(circle at 50% 30%, transparent 30%, rgba(0,0,0,0.7) 100%)',
-                    opacity: introVignette,
-                }}
-            />
-            <div
-                style={{
-                    display: 'flex',
-                    flex: 1,
-                    border: `1px solid ${borderSoft}`,
-                    borderRadius: 20,
-                    overflow: 'hidden',
-                    boxShadow:
-                        '0 30px 90px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03)',
-                }}
-            >
-                <div
-                    style={{
-                        width: 64,
-                        background: '#0f141b',
-                        borderRight: `1px solid ${borderSoft}`,
-                        padding: '14px 0',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 18,
-                    }}
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            marginBottom: 6,
-                        }}
-                    >
-                        <div
-                            style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: 999,
-                                background: '#ff5f57',
-                            }}
-                        />
-                        <div
-                            style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: 999,
-                                background: '#febc2e',
-                            }}
-                        />
-                        <div
-                            style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: 999,
-                                background: '#28c840',
-                            }}
-                        />
-                    </div>
-                    {(
-                        ['explorer', 'search', 'debug', 'marketplace'] as const
-                    ).map(
-                        (icon, idx) => (
-                        <div
-                            key={icon}
-                            style={{
-                                width: 34,
-                                height: 34,
-                                borderRadius: 10,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: idx === 0 ? '#dbe6f3' : '#71839a',
-                                background: idx === 0 ? '#1a2430' : 'transparent',
-                                boxShadow:
-                                    idx === 0
-                                        ? 'inset 0 0 0 1px rgba(88,166,255,0.3)'
-                                        : 'none',
-                            }}
-                        >
-                            <ActivityIcon variant={icon} active={idx === 0} />
-                        </div>
-                    ),
-                    )}
-                </div>
-
-                <div
-                    style={{
-                        width: 340,
-                        background: panel,
-                        borderRight: `1px solid ${borderSoft}`,
-                        padding: '14px 14px 18px',
-                        position: 'relative',
-                    }}
-                >
-                    <div
-                        style={{
-                            color: textMuted,
-                            fontSize: 13,
-                            letterSpacing: 1.1,
-                            marginBottom: 10,
-                            fontWeight: 600,
-                        }}
-                    >
-                        EXPLORER
-                    </div>
-                    <div
-                        style={{
-                            fontFamily:
-                                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                            fontSize: 20,
-                            lineHeight: 1.62,
-                            color: text,
-                        }}
-                    >
-                        {(showConvertedFiles ? topFilesAfter : topFilesBefore).map(
-                            (line) => {
-                                const isXIcon = line.trim() === 'XIcon.svg';
-                                return (
-                                    <div
-                                        key={line}
-                                        style={{
-                                            whiteSpace: 'pre',
-                                            borderRadius: 8,
-                                            padding: '0 8px',
-                                            margin: '1px 0',
-                                            backgroundColor: isXIcon
-                                                ? `rgba(88, 166, 255, ${0.08 + xIconHighlight * 0.25})`
-                                                : 'transparent',
-                                            color: isXIcon
-                                                ? `rgba(230, 237, 243, ${0.86 + xIconHighlight * 0.14})`
-                                                : text,
-                                            boxShadow: isXIcon
-                                                ? `inset 0 0 0 1px rgba(88, 166, 255, ${0.25 + xIconHighlight * 0.45})`
-                                                : 'none',
-                                        }}
-                                    >
-                                        {line}
-                                    </div>
-                                );
-                            },
-                        )}
-                    </div>
-                    {showConvertedFiles ? (
-                        <>
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    left: 84 + clickTravel * 22,
-                                    top: 108 + clickTravel * 138,
-                                    opacity: mouseOpacity,
-                                    fontSize: 31,
-                                    lineHeight: 1,
-                                    color: text,
-                                    transform: 'rotate(-7deg)',
-                                    filter: 'drop-shadow(0 3px 4px rgba(0,0,0,0.5))',
-                                }}
-                            >
-                                👆
-                            </div>
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    left: 112,
-                                    top: 244,
-                                    width: 16 + clickPulse * 34,
-                                    height: 16 + clickPulse * 34,
-                                    opacity: clickPulse > 0 ? 0.35 * (1 - clickPulse) : 0,
-                                    borderRadius: 999,
-                                    border: `2px solid ${blue}`,
-                                    transform: `translate(-50%, -50%)`,
-                                }}
-                            />
-                        </>
-                    ) : null}
-                </div>
-
-                <div
-                    style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        flex: 1,
-                        background: bg,
-                    }}
-                >
-                    <div
-                        style={{
-                            height: 42,
-                            borderBottom: `1px solid ${borderSoft}`,
-                            display: 'flex',
-                            alignItems: 'stretch',
-                            background: '#0d1219',
-                        }}
-                    >
-                        <div
-                            style={{
-                                minWidth: 102,
-                                borderRight: `1px solid ${borderSoft}`,
-                                background: '#121a23',
-                                color: '#dde8f6',
-                                fontSize: 16,
-                                display: 'flex',
-                                alignItems: 'center',
-                                padding: '0 14px',
-                                fontWeight: 600,
-                            }}
-                        >
-                            icon.tsx
-                        </div>
-                        {showXIconTab ? (
-                            <div
-                                style={{
-                                    minWidth: 112,
-                                    borderRight: `1px solid ${borderSoft}`,
-                                    background: '#151f2b',
-                                    color: '#cae3ff',
-                                    fontSize: 16,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    padding: '0 14px',
-                                    fontWeight: 600,
-                                    boxShadow:
-                                        'inset 0 2px 0 rgba(88,166,255,0.85)',
-                                }}
-                            >
-                                XIcon.svg
-                            </div>
-                        ) : null}
-                        <div style={{ flex: 1 }} />
-                    </div>
-
-                    <div
-                        style={{
-                            flex: 1,
-                            padding: 14,
-                            position: 'relative',
-                            overflow: 'hidden',
-                        }}
-                    >
-                        <div
-                            style={{
-                                position: 'absolute',
-                                inset: 14,
-                                opacity: beforeOpacity,
-                                transform: `translateY(${beforeYOffset}px)`,
-                                filter: `blur(${beforeBlur}px)`,
-                            }}
-                        >
-                            <CodeBlock lines={editorBefore} language="tsx" />
-                        </div>
-                        <div
-                            style={{
-                                position: 'absolute',
-                                inset: 14,
-                                opacity: afterOpacity,
-                                transform: `translateY(${afterYOffset}px)`,
-                                filter: `blur(${afterBlur}px)`,
-                            }}
-                        >
-                            <CodeBlock lines={editorAfter} language="svg" />
-                        </div>
-                    </div>
-
-                    <div
-                        style={{
-                            height: 240,
-                            borderTop: `1px solid ${borderSoft}`,
-                            background: panelSoft,
-                            padding: '14px 18px',
-                            overflow: 'visible',
-                        }}
-                    >
-                        <div
-                            style={{
-                                color: textMuted,
-                                fontSize: 16,
-                                marginBottom: 8,
-                            }}
-                        >
-                            TERMINAL
-                        </div>
-                        <div
-                            style={{
-                                fontFamily:
-                                    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                                fontSize: 18,
-                                lineHeight: 1.35,
-                                color: text,
-                                whiteSpace: 'pre',
-                            }}
-                        >
-                            <span style={{ color: yellow }}>{commandText}</span>
-                            {'\n'}
-                            {terminalLines
-                                .slice(1, Math.max(1, terminalLinesCount))
-                                .join('\n')}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </AbsoluteFill>
-    );
+          {frame >= 260 ? "icon name copied" : "light / dark included"}
+        </div>
+      ) : null}
+    </AbsoluteFill>
+  );
 };
